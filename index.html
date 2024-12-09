@@ -1,25 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Simple Bomberman Improved</title>
+<meta charset="UTF-8" />
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0,
+               user-scalable=no,
+               initial-scale=1.0,
+               minimum-scale=1.0,
+               maximum-scale=1.0" />
+<title>Bomberman - Landscape Only</title>
 <style>
-  body, html {
-    margin:0; padding:0; width:100%; height:100%;
-    background:#333;
+  html, body {
+    margin: 0;
+    padding: 0;
+    width:100%;
+    height:100%;
+    overflow: hidden;
+    background:#000;
+    font-family: sans-serif;
+    color: #fff;
   }
   #game-container {
-    width: 800px;
-    height: 600px;
-    margin: 0 auto;
-    display: block;
+    width: 100vw;
+    height: 100vh;
     background: #000;
+    position: relative;
   }
+
+  /* Overlay for portrait mode */
+  #rotate-message {
+    display: none;
+    position: absolute;
+    top:0; left:0; width:100%; height:100%;
+    background: rgba(0,0,0,0.8);
+    text-align: center;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+  #rotate-message p {
+    font-size: 2em;
+  }
+
+  @media (orientation: portrait) {
+    #rotate-message {
+      display: flex;
+    }
+    #game-container canvas {
+      display: none;
+    }
+  }
+
+  /* Mobile Controls */
+  .btn {
+    position: absolute;
+    background: #555;
+    width: 60px;
+    height: 60px;
+    border-radius: 10px;
+    opacity: 0.65;
+    touch-action: none;
+  }
+
+  /* D-Pad layout (left side):
+       Up
+    Left   Right
+       Down
+    We'll space them out more and position them clearly
+  */
+  #btn-up {
+    left: 10%;
+    bottom: 30%;
+  }
+  #btn-left {
+    left: 5%;
+    bottom: 20%;
+  }
+  #btn-right {
+    left: 15%;
+    bottom: 20%;
+  }
+  #btn-down {
+    left: 10%;
+    bottom: 10%;
+  }
+
+  /* Bomb button (right side), spaced well from edges */
+  #btn-bomb {
+    right: 10%;
+    bottom: 15%;
+    background: #00f;
+  }
+
 </style>
 </head>
 <body>
-<div id="game-container"></div>
+<div id="game-container">
+  <div id="rotate-message"><p>Please rotate your device to landscape mode.</p></div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
 <script>
 // --- GAME CONFIG ---
@@ -34,10 +114,8 @@ const EXPLOSION_RADIUS = 2; // tiles in each direction
 // 0 = empty floor
 // 1 = indestructible wall (gray)
 // 2 = indestructible block (brown)
-// We'll introduce a new type for destructible blocks (not in the initial layout):
-// 3 = destructible block (green) - placed randomly after map creation
+// 3 = destructible block (green)
 
-// Initial layout: walls (1), brown blocks (2) and empty (0)
 let levelData = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
@@ -52,6 +130,13 @@ let levelData = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
+let cursors;
+let player;
+let bombs = [];
+let sceneRef;
+let spaceKey;
+let mobileInput = { up: false, down: false, left: false, right: false, bomb: false };
+
 const config = {
   type: Phaser.AUTO,
   width: GRID_WIDTH * TILE_SIZE,
@@ -64,6 +149,10 @@ const config = {
       debug: false
     }
   },
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH
+  },
   scene: {
     preload: preload,
     create: create,
@@ -71,16 +160,10 @@ const config = {
   }
 };
 
-let cursors;
-let player;
-let bombs = [];
-let sceneRef;
-let spaceKey;
-
 const game = new Phaser.Game(config);
 
 function preload() {
-  // No external assets, using basic shapes
+  // No external assets needed
 }
 
 function create() {
@@ -88,19 +171,17 @@ function create() {
   
   this.wallsGroup = this.physics.add.staticGroup();
   this.indestructibleGroup = this.physics.add.staticGroup();
-  this.destructibleGroup = this.physics.add.staticGroup(); // will add after random placement
+  this.destructibleGroup = this.physics.add.staticGroup();
 
-  // Build the initial level with indestructible walls and blocks
+  // Build initial level
   for (let y = 0; y < GRID_HEIGHT; y++) {
     for (let x = 0; x < GRID_WIDTH; x++) {
       let tile = levelData[y][x];
       if (tile === 1) {
-        // Gray walls (indestructible)
         let wall = this.add.rectangle(x*TILE_SIZE+TILE_SIZE/2, y*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x444444);
         this.physics.add.existing(wall, true);
         this.wallsGroup.add(wall);
       } else if (tile === 2) {
-        // Brown blocks (now indestructible)
         let block = this.add.rectangle(x*TILE_SIZE+TILE_SIZE/2, y*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x886600);
         this.physics.add.existing(block, true);
         this.indestructibleGroup.add(block);
@@ -113,16 +194,10 @@ function create() {
   this.physics.add.existing(player);
   player.body.setCollideWorldBounds(true);
 
-  // Ensure we have a safe area around player:
-  // Let's say a 3x3 area around (1,1), i.e. tiles (1,1), (1,2), (2,1), (2,2), (2,0), (0,2) etc.
-  // More explicitly, keep tiles (x,y) with x in [0..2] and y in [0..2] empty.
-
   let safeZoneRadius = 2; 
   let playerStartX = 1;
   let playerStartY = 1;
 
-  // Generate random destructible blocks in empty spots (tile=0)
-  // except in the safe zone
   let emptyTiles = [];
   for (let y = 0; y < GRID_HEIGHT; y++) {
     for (let x = 0; x < GRID_WIDTH; x++) {
@@ -134,16 +209,14 @@ function create() {
     }
   }
 
-  // Let's fill approximately 30% of the empty tiles with destructible blocks
-  let numberOfDestructible = Math.floor(emptyTiles.length * 0.3);
   Phaser.Utils.Array.Shuffle(emptyTiles);
+  let numberOfDestructible = Math.floor(emptyTiles.length * 0.3);
   let chosenTiles = emptyTiles.slice(0, numberOfDestructible);
 
-  // Place destructible blocks (green) on chosen tiles
   for (let tileData of chosenTiles) {
     let dx = tileData.x;
     let dy = tileData.y;
-    levelData[dy][dx] = 3; // Mark as destructible
+    levelData[dy][dx] = 3; // destructible
     let destr = this.add.rectangle(dx*TILE_SIZE+TILE_SIZE/2, dy*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x005500);
     this.physics.add.existing(destr, true);
     this.destructibleGroup.add(destr);
@@ -154,17 +227,60 @@ function create() {
   this.physics.add.collider(player, this.indestructibleGroup);
   this.physics.add.collider(player, this.destructibleGroup);
 
-  // Input
+  // Keyboard Input
   cursors = this.input.keyboard.createCursorKeys();
   spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+  // Create on-screen controls
+  createOnScreenControls.call(this);
 
   // Set world bounds
   this.physics.world.setBounds(0,0, GRID_WIDTH*TILE_SIZE, GRID_HEIGHT*TILE_SIZE);
 }
 
+function createOnScreenControls() {
+  const container = document.getElementById('game-container');
+
+  let btnUp = createButton('btn-up', container);
+  let btnDown = createButton('btn-down', container);
+  let btnLeft = createButton('btn-left', container);
+  let btnRight = createButton('btn-right', container);
+  let btnBomb = createButton('btn-bomb', container);
+
+  addButtonEvents(btnUp,   () => mobileInput.up = true,   () => mobileInput.up = false);
+  addButtonEvents(btnDown, () => mobileInput.down = true, () => mobileInput.down = false);
+  addButtonEvents(btnLeft, () => mobileInput.left = true, () => mobileInput.left = false);
+  addButtonEvents(btnRight,() => mobileInput.right = true,() => mobileInput.right = false);
+  addButtonEvents(btnBomb, () => mobileInput.bomb = true, () => mobileInput.bomb = false);
+}
+
+function createButton(id, parent) {
+  let btn = document.createElement('div');
+  btn.id = id;
+  btn.className = 'btn';
+  parent.appendChild(btn);
+  return btn;
+}
+
+function addButtonEvents(element, onDown, onUp) {
+  element.addEventListener('pointerdown', (e) => { e.preventDefault(); onDown(); });
+  element.addEventListener('pointerup',   (e) => { e.preventDefault(); onUp(); });
+  element.addEventListener('pointerout',  (e) => { e.preventDefault(); onUp(); });
+  element.addEventListener('pointercancel',(e) => { e.preventDefault(); onUp(); });
+}
+
 function update() {
   let vx = 0;
   let vy = 0;
+
+  // Mobile input
+  if (mobileInput.left) vx = -PLAYER_SPEED;
+  else if (mobileInput.right) vx = PLAYER_SPEED;
+  
+  if (mobileInput.up) vy = -PLAYER_SPEED;
+  else if (mobileInput.down) vy = PLAYER_SPEED;
+
+  // Keyboard input (if on desktop)
   if (cursors.left.isDown) vx = -PLAYER_SPEED;
   else if (cursors.right.isDown) vx = PLAYER_SPEED;
   
@@ -173,8 +289,10 @@ function update() {
   
   player.body.setVelocity(vx, vy);
 
-  if (Phaser.Input.Keyboard.JustDown(spaceKey)) {
+  // Bomb input: check either space or mobile bomb
+  if (Phaser.Input.Keyboard.JustDown(spaceKey) || mobileInput.bomb === true) {
     placeBomb();
+    mobileInput.bomb = false; // reset bomb after placing
   }
 }
 
@@ -238,7 +356,6 @@ function explodeTile(tx, ty) {
   if (tx < 0 || tx >= GRID_WIDTH || ty < 0 || ty >= GRID_HEIGHT) return false;
   let tile = levelData[ty][tx];
   
-  // Show explosion flash
   let flash = sceneRef.add.rectangle(tx*TILE_SIZE+TILE_SIZE/2, ty*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0xff0000);
   sceneRef.time.delayedCall(200, () => flash.destroy(), [], sceneRef);
 
@@ -248,11 +365,9 @@ function explodeTile(tx, ty) {
   } else if (tile === 3) {
     // Destructible block
     destroyDestructible(tx, ty);
-    // Stop explosion in that direction
     return false; 
   }
   
-  // tile === 0 means empty floor, continue explosion
   return true;
 }
 
