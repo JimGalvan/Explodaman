@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Simple Bomberman Improved</title>
+<style>
+  body, html {
+    margin:0; padding:0; width:100%; height:100%;
+    background:#333;
+  }
+  #game-container {
+    width: 800px;
+    height: 600px;
+    margin: 0 auto;
+    display: block;
+    background: #000;
+  }
+</style>
+</head>
+<body>
+<div id="game-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+<script>
+// --- GAME CONFIG ---
+const TILE_SIZE = 32;
+const GRID_WIDTH = 15;
+const GRID_HEIGHT = 11;
+const PLAYER_SPEED = 150;
+const BOMB_DELAY = 2000; // ms until bomb explodes
+const EXPLOSION_RADIUS = 2; // tiles in each direction
+
+// Map Legend:
+// 0 = empty floor
+// 1 = indestructible wall (gray)
+// 2 = indestructible block (brown)
+// We'll introduce a new type for destructible blocks (not in the initial layout):
+// 3 = destructible block (green) - placed randomly after map creation
+
+// Initial layout: walls (1), brown blocks (2) and empty (0)
+let levelData = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+const config = {
+  type: Phaser.AUTO,
+  width: GRID_WIDTH * TILE_SIZE,
+  height: GRID_HEIGHT * TILE_SIZE,
+  parent: 'game-container',
+  backgroundColor: '#000000',
+  physics: {
+    default: 'arcade',
+    arcade: {
+      debug: false
+    }
+  },
+  scene: {
+    preload: preload,
+    create: create,
+    update: update
+  }
+};
+
+let cursors;
+let player;
+let bombs = [];
+let sceneRef;
+let spaceKey;
+
+const game = new Phaser.Game(config);
+
+function preload() {
+  // No external assets, using basic shapes
+}
+
+function create() {
+  sceneRef = this;
+  
+  this.wallsGroup = this.physics.add.staticGroup();
+  this.indestructibleGroup = this.physics.add.staticGroup();
+  this.destructibleGroup = this.physics.add.staticGroup(); // will add after random placement
+
+  // Build the initial level with indestructible walls and blocks
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    for (let x = 0; x < GRID_WIDTH; x++) {
+      let tile = levelData[y][x];
+      if (tile === 1) {
+        // Gray walls (indestructible)
+        let wall = this.add.rectangle(x*TILE_SIZE+TILE_SIZE/2, y*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x444444);
+        this.physics.add.existing(wall, true);
+        this.wallsGroup.add(wall);
+      } else if (tile === 2) {
+        // Brown blocks (now indestructible)
+        let block = this.add.rectangle(x*TILE_SIZE+TILE_SIZE/2, y*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x886600);
+        this.physics.add.existing(block, true);
+        this.indestructibleGroup.add(block);
+      }
+    }
+  }
+
+  // Player at (1,1)
+  player = this.add.rectangle((1*TILE_SIZE)+TILE_SIZE/2, (1*TILE_SIZE)+TILE_SIZE/2, TILE_SIZE/1.5, TILE_SIZE/1.5, 0x00ff00);
+  this.physics.add.existing(player);
+  player.body.setCollideWorldBounds(true);
+
+  // Ensure we have a safe area around player:
+  // Let's say a 3x3 area around (1,1), i.e. tiles (1,1), (1,2), (2,1), (2,2), (2,0), (0,2) etc.
+  // More explicitly, keep tiles (x,y) with x in [0..2] and y in [0..2] empty.
+
+  let safeZoneRadius = 2; 
+  let playerStartX = 1;
+  let playerStartY = 1;
+
+  // Generate random destructible blocks in empty spots (tile=0)
+  // except in the safe zone
+  let emptyTiles = [];
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    for (let x = 0; x < GRID_WIDTH; x++) {
+      let isSafeZone = (x >= playerStartX - safeZoneRadius && x <= playerStartX + safeZoneRadius &&
+                        y >= playerStartY - safeZoneRadius && y <= playerStartY + safeZoneRadius);
+      if (levelData[y][x] === 0 && !isSafeZone) {
+        emptyTiles.push({x, y});
+      }
+    }
+  }
+
+  // Let's fill approximately 30% of the empty tiles with destructible blocks
+  let numberOfDestructible = Math.floor(emptyTiles.length * 0.3);
+  Phaser.Utils.Array.Shuffle(emptyTiles);
+  let chosenTiles = emptyTiles.slice(0, numberOfDestructible);
+
+  // Place destructible blocks (green) on chosen tiles
+  for (let tileData of chosenTiles) {
+    let dx = tileData.x;
+    let dy = tileData.y;
+    levelData[dy][dx] = 3; // Mark as destructible
+    let destr = this.add.rectangle(dx*TILE_SIZE+TILE_SIZE/2, dy*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x005500);
+    this.physics.add.existing(destr, true);
+    this.destructibleGroup.add(destr);
+  }
+
+  // Collisions
+  this.physics.add.collider(player, this.wallsGroup);
+  this.physics.add.collider(player, this.indestructibleGroup);
+  this.physics.add.collider(player, this.destructibleGroup);
+
+  // Input
+  cursors = this.input.keyboard.createCursorKeys();
+  spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+  // Set world bounds
+  this.physics.world.setBounds(0,0, GRID_WIDTH*TILE_SIZE, GRID_HEIGHT*TILE_SIZE);
+}
+
+function update() {
+  let vx = 0;
+  let vy = 0;
+  if (cursors.left.isDown) vx = -PLAYER_SPEED;
+  else if (cursors.right.isDown) vx = PLAYER_SPEED;
+  
+  if (cursors.up.isDown) vy = -PLAYER_SPEED;
+  else if (cursors.down.isDown) vy = PLAYER_SPEED;
+  
+  player.body.setVelocity(vx, vy);
+
+  if (Phaser.Input.Keyboard.JustDown(spaceKey)) {
+    placeBomb();
+  }
+}
+
+function placeBomb() {
+  let px = Math.floor(player.x / TILE_SIZE);
+  let py = Math.floor(player.y / TILE_SIZE);
+
+  // Check if a bomb already exists here
+  for (let b of bombs) {
+    if (Math.floor(b.x/TILE_SIZE) === px && Math.floor(b.y/TILE_SIZE) === py) {
+      return; 
+    }
+  }
+
+  let bombX = px*TILE_SIZE + TILE_SIZE/2;
+  let bombY = py*TILE_SIZE + TILE_SIZE/2;
+
+  let bomb = sceneRef.add.rectangle(bombX, bombY, TILE_SIZE*0.8, TILE_SIZE*0.8, 0x0000ff);
+  sceneRef.physics.add.existing(bomb);
+  bomb.body.setImmovable(true);
+  bombs.push(bomb);
+
+  // Player collides with bombs
+  sceneRef.physics.add.collider(player, bomb);
+
+  // Timer to explode
+  sceneRef.time.delayedCall(BOMB_DELAY, () => {
+    explodeBomb(bomb);
+  }, [], sceneRef);
+}
+
+function explodeBomb(bomb) {
+  bombs = bombs.filter(b => b !== bomb);
+  bomb.destroy();
+
+  let bx = Math.floor(bomb.x/TILE_SIZE);
+  let by = Math.floor(bomb.y/TILE_SIZE);
+
+  // Explode center
+  explodeTile(bx, by);
+  
+  // Up
+  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+    if (!explodeTile(bx, by - i)) break;
+  }
+  // Down
+  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+    if (!explodeTile(bx, by + i)) break;
+  }
+  // Left
+  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+    if (!explodeTile(bx - i, by)) break;
+  }
+  // Right
+  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+    if (!explodeTile(bx + i, by)) break;
+  }
+}
+
+function explodeTile(tx, ty) {
+  if (tx < 0 || tx >= GRID_WIDTH || ty < 0 || ty >= GRID_HEIGHT) return false;
+  let tile = levelData[ty][tx];
+  
+  // Show explosion flash
+  let flash = sceneRef.add.rectangle(tx*TILE_SIZE+TILE_SIZE/2, ty*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0xff0000);
+  sceneRef.time.delayedCall(200, () => flash.destroy(), [], sceneRef);
+
+  if (tile === 1 || tile === 2) {
+    // Indestructible - stop explosion
+    return false;
+  } else if (tile === 3) {
+    // Destructible block
+    destroyDestructible(tx, ty);
+    // Stop explosion in that direction
+    return false; 
+  }
+  
+  // tile === 0 means empty floor, continue explosion
+  return true;
+}
+
+function destroyDestructible(tx, ty) {
+  levelData[ty][tx] = 0; // back to empty
+  let children = sceneRef.destructibleGroup.getChildren();
+  for (let c of children) {
+    let cx = Math.floor(c.x/TILE_SIZE);
+    let cy = Math.floor(c.y/TILE_SIZE);
+    if (cx === tx && cy === ty) {
+      c.destroy();
+      break;
+    }
+  }
+}
+</script>
+</body>
+</html>
