@@ -1,388 +1,421 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0,
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0,
                user-scalable=no,
                initial-scale=1.0,
                minimum-scale=1.0,
                maximum-scale=1.0" />
-<title>Bomberman - Landscape Only</title>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    width:100%;
-    height:100%;
-    overflow: hidden;
-    background:#000;
-    font-family: sans-serif;
-    color: #fff;
-  }
-  #game-container {
-    width: 100vw;
-    height: 100vh;
-    background: #000;
-    position: relative;
-  }
+    <title>Bomberman - Landscape Only</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: sans-serif;
+            color: #fff;
+            /* Disable text selection and browser callouts */
+            user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-text-size-adjust: none;
+            /* Prevents Safari from adjusting text size */
+            overscroll-behavior: none;
+            touch-action: none;
+        }
 
-  /* Overlay for portrait mode */
-  #rotate-message {
-    display: none;
-    position: absolute;
-    top:0; left:0; width:100%; height:100%;
-    background: rgba(0,0,0,0.8);
-    text-align: center;
-    justify-content: center;
-    align-items: center;
-    padding: 20px;
-    box-sizing: border-box;
-  }
-  #rotate-message p {
-    font-size: 2em;
-  }
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            position: relative;
+            /* This ensures no scrolling or selecting inside container */
+            user-select: none;
+            touch-action: none;
+        }
 
-  @media (orientation: portrait) {
-    #rotate-message {
-      display: flex;
-    }
-    #game-container canvas {
-      display: none;
-    }
-  }
+        /* Overlay for portrait mode */
+        #rotate-message {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            text-align: center;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
 
-  /* Mobile Controls */
-  .btn {
-    position: absolute;
-    background: #555;
-    width: 60px;
-    height: 60px;
-    border-radius: 10px;
-    opacity: 0.65;
-    touch-action: none;
-  }
+        #rotate-message p {
+            font-size: 2em;
+        }
 
-  /* D-Pad layout (left side):
-       Up
-    Left   Right
-       Down
-    We'll space them out more and position them clearly
+        @media (orientation: portrait) {
+            #rotate-message {
+                display: flex;
+            }
+
+            #game-container canvas {
+                display: none;
+            }
+        }
+
+        /* Mobile Controls */
+        .btn {
+            position: absolute;
+            background: #555;
+            width: 60px;
+            height: 60px;
+            border-radius: 10px;
+            opacity: 0.65;
+            touch-action: none;
+            /* For better mobile handling */
+        }
+
+        /* Adjust the D-Pad layout for more spacing:
+     Let's space them vertically more:
+       Up (higher up)
+    Left     Right
+       Down (lower down)
   */
-  #btn-up {
-    left: 10%;
-    bottom: 30%;
-  }
-  #btn-left {
-    left: 5%;
-    bottom: 20%;
-  }
-  #btn-right {
-    left: 15%;
-    bottom: 20%;
-  }
-  #btn-down {
-    left: 10%;
-    bottom: 10%;
-  }
+        #btn-up {
+            left: 10%;
+            bottom: 40%;
+            /* Higher up than before */
+        }
 
-  /* Bomb button (right side), spaced well from edges */
-  #btn-bomb {
-    right: 10%;
-    bottom: 15%;
-    background: #00f;
-  }
+        #btn-left {
+            left: 3%;
+            /* Slightly closer to the left edge */
+            bottom: 25%;
+        }
 
-</style>
+        #btn-right {
+            left: 17%;
+            /* Moved further to the right for a larger gap */
+            bottom: 25%;
+        }
+
+        #btn-down {
+            left: 10%;
+            bottom: 10%;
+            /* Lower than before for more vertical separation */
+        }
+
+        /* Bomb button (right side) stays similar */
+        #btn-bomb {
+            right: 5%;
+            bottom: 15%;
+            background: #00f;
+        }
+    </style>
 </head>
+
 <body>
-<div id="game-container">
-  <div id="rotate-message"><p>Please rotate your device to landscape mode.</p></div>
-</div>
+    <div id="game-container">
+        <div id="rotate-message">
+            <p>Please rotate your device to landscape mode.</p>
+        </div>
+    </div>
 
-<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
-<script>
-// --- GAME CONFIG ---
-const TILE_SIZE = 32;
-const GRID_WIDTH = 15;
-const GRID_HEIGHT = 11;
-const PLAYER_SPEED = 150;
-const BOMB_DELAY = 2000; // ms until bomb explodes
-const EXPLOSION_RADIUS = 2; // tiles in each direction
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.0/signalr.min.js"></script>
+    <script>
 
-// Map Legend:
-// 0 = empty floor
-// 1 = indestructible wall (gray)
-// 2 = indestructible block (brown)
-// 3 = destructible block (green)
+        let lastTouch = 0;
+        document.addEventListener('touchstart', (e) => {
+            const now = Date.now();
+            if (now - lastTouch <= 300) {
+                e.preventDefault();
+            }
+            lastTouch = now;
+        }, { passive: false });
 
-let levelData = [
-  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,2,0,2,0,2,0,2,0,2,0,2,0,1],
-  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-];
 
-let cursors;
-let player;
-let bombs = [];
-let sceneRef;
-let spaceKey;
-let mobileInput = { up: false, down: false, left: false, right: false, bomb: false };
+        // --- GAME CONFIG ---
+        const TILE_SIZE = 32;
+        const GRID_WIDTH = 15;
+        const GRID_HEIGHT = 11;
+        const PLAYER_SPEED = 150;
+        const BOMB_DELAY = 2000; // ms until bomb explodes
+        const EXPLOSION_RADIUS = 2; // tiles in each direction
 
-const config = {
-  type: Phaser.AUTO,
-  width: GRID_WIDTH * TILE_SIZE,
-  height: GRID_HEIGHT * TILE_SIZE,
-  parent: 'game-container',
-  backgroundColor: '#000000',
-  physics: {
-    default: 'arcade',
-    arcade: {
-      debug: false
-    }
-  },
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH
-  },
-  scene: {
-    preload: preload,
-    create: create,
-    update: update
-  }
-};
+        // Map Legend:
+        // 0 = empty floor
+        // 1 = indestructible wall (gray)
+        // 2 = indestructible block (brown)
+        // 3 = destructible block (green)
 
-const game = new Phaser.Game(config);
+        let levelData = [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ];
 
-function preload() {
-  // No external assets needed
-}
+        let cursors;
+        let player;
+        let bombs = [];
+        let sceneRef;
+        let spaceKey;
+        let mobileInput = { up: false, down: false, left: false, right: false, bomb: false };
 
-function create() {
-  sceneRef = this;
-  
-  this.wallsGroup = this.physics.add.staticGroup();
-  this.indestructibleGroup = this.physics.add.staticGroup();
-  this.destructibleGroup = this.physics.add.staticGroup();
+        const config = {
+            type: Phaser.AUTO,
+            width: GRID_WIDTH * TILE_SIZE,
+            height: GRID_HEIGHT * TILE_SIZE,
+            parent: 'game-container',
+            backgroundColor: '#000000',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    debug: false
+                }
+            },
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
 
-  // Build initial level
-  for (let y = 0; y < GRID_HEIGHT; y++) {
-    for (let x = 0; x < GRID_WIDTH; x++) {
-      let tile = levelData[y][x];
-      if (tile === 1) {
-        let wall = this.add.rectangle(x*TILE_SIZE+TILE_SIZE/2, y*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x444444);
-        this.physics.add.existing(wall, true);
-        this.wallsGroup.add(wall);
-      } else if (tile === 2) {
-        let block = this.add.rectangle(x*TILE_SIZE+TILE_SIZE/2, y*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x886600);
-        this.physics.add.existing(block, true);
-        this.indestructibleGroup.add(block);
-      }
-    }
-  }
+        const game = new Phaser.Game(config);
 
-  // Player at (1,1)
-  player = this.add.rectangle((1*TILE_SIZE)+TILE_SIZE/2, (1*TILE_SIZE)+TILE_SIZE/2, TILE_SIZE/1.5, TILE_SIZE/1.5, 0x00ff00);
-  this.physics.add.existing(player);
-  player.body.setCollideWorldBounds(true);
+        function preload() {
+            // No external assets needed
+        }
 
-  let safeZoneRadius = 2; 
-  let playerStartX = 1;
-  let playerStartY = 1;
+        function create() {
+            sceneRef = this;
 
-  let emptyTiles = [];
-  for (let y = 0; y < GRID_HEIGHT; y++) {
-    for (let x = 0; x < GRID_WIDTH; x++) {
-      let isSafeZone = (x >= playerStartX - safeZoneRadius && x <= playerStartX + safeZoneRadius &&
+            this.wallsGroup = this.physics.add.staticGroup();
+            this.indestructibleGroup = this.physics.add.staticGroup();
+            this.destructibleGroup = this.physics.add.staticGroup();
+
+            // Build initial level
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    let tile = levelData[y][x];
+                    if (tile === 1) {
+                        let wall = this.add.rectangle(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0x444444);
+                        this.physics.add.existing(wall, true);
+                        this.wallsGroup.add(wall);
+                    } else if (tile === 2) {
+                        let block = this.add.rectangle(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0x886600);
+                        this.physics.add.existing(block, true);
+                        this.indestructibleGroup.add(block);
+                    }
+                }
+            }
+
+            // Player at (1,1)
+            player = this.add.rectangle((1 * TILE_SIZE) + TILE_SIZE / 2, (1 * TILE_SIZE) + TILE_SIZE / 2, TILE_SIZE / 1.5, TILE_SIZE / 1.5, 0x00ff00);
+            this.physics.add.existing(player);
+            player.body.setCollideWorldBounds(true);
+
+            let safeZoneRadius = 2;
+            let playerStartX = 1;
+            let playerStartY = 1;
+
+            let emptyTiles = [];
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    let isSafeZone = (x >= playerStartX - safeZoneRadius && x <= playerStartX + safeZoneRadius &&
                         y >= playerStartY - safeZoneRadius && y <= playerStartY + safeZoneRadius);
-      if (levelData[y][x] === 0 && !isSafeZone) {
-        emptyTiles.push({x, y});
-      }
-    }
-  }
+                    if (levelData[y][x] === 0 && !isSafeZone) {
+                        emptyTiles.push({ x, y });
+                    }
+                }
+            }
 
-  Phaser.Utils.Array.Shuffle(emptyTiles);
-  let numberOfDestructible = Math.floor(emptyTiles.length * 0.3);
-  let chosenTiles = emptyTiles.slice(0, numberOfDestructible);
+            Phaser.Utils.Array.Shuffle(emptyTiles);
+            let numberOfDestructible = Math.floor(emptyTiles.length * 0.3);
+            let chosenTiles = emptyTiles.slice(0, numberOfDestructible);
 
-  for (let tileData of chosenTiles) {
-    let dx = tileData.x;
-    let dy = tileData.y;
-    levelData[dy][dx] = 3; // destructible
-    let destr = this.add.rectangle(dx*TILE_SIZE+TILE_SIZE/2, dy*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0x005500);
-    this.physics.add.existing(destr, true);
-    this.destructibleGroup.add(destr);
-  }
+            for (let tileData of chosenTiles) {
+                let dx = tileData.x;
+                let dy = tileData.y;
+                levelData[dy][dx] = 3; // destructible
+                let destr = this.add.rectangle(dx * TILE_SIZE + TILE_SIZE / 2, dy * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0x005500);
+                this.physics.add.existing(destr, true);
+                this.destructibleGroup.add(destr);
+            }
 
-  // Collisions
-  this.physics.add.collider(player, this.wallsGroup);
-  this.physics.add.collider(player, this.indestructibleGroup);
-  this.physics.add.collider(player, this.destructibleGroup);
+            // Collisions
+            this.physics.add.collider(player, this.wallsGroup);
+            this.physics.add.collider(player, this.indestructibleGroup);
+            this.physics.add.collider(player, this.destructibleGroup);
 
-  // Keyboard Input
-  cursors = this.input.keyboard.createCursorKeys();
-  spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+            // Keyboard Input
+            cursors = this.input.keyboard.createCursorKeys();
+            spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-  // Create on-screen controls
-  createOnScreenControls.call(this);
+            // Create on-screen controls
+            createOnScreenControls.call(this);
 
-  // Set world bounds
-  this.physics.world.setBounds(0,0, GRID_WIDTH*TILE_SIZE, GRID_HEIGHT*TILE_SIZE);
-}
+            // Set world bounds
+            this.physics.world.setBounds(0, 0, GRID_WIDTH * TILE_SIZE, GRID_HEIGHT * TILE_SIZE);
+        }
 
-function createOnScreenControls() {
-  const container = document.getElementById('game-container');
+        function createOnScreenControls() {
+            const container = document.getElementById('game-container');
 
-  let btnUp = createButton('btn-up', container);
-  let btnDown = createButton('btn-down', container);
-  let btnLeft = createButton('btn-left', container);
-  let btnRight = createButton('btn-right', container);
-  let btnBomb = createButton('btn-bomb', container);
+            let btnUp = createButton('btn-up', container);
+            let btnDown = createButton('btn-down', container);
+            let btnLeft = createButton('btn-left', container);
+            let btnRight = createButton('btn-right', container);
+            let btnBomb = createButton('btn-bomb', container);
 
-  addButtonEvents(btnUp,   () => mobileInput.up = true,   () => mobileInput.up = false);
-  addButtonEvents(btnDown, () => mobileInput.down = true, () => mobileInput.down = false);
-  addButtonEvents(btnLeft, () => mobileInput.left = true, () => mobileInput.left = false);
-  addButtonEvents(btnRight,() => mobileInput.right = true,() => mobileInput.right = false);
-  addButtonEvents(btnBomb, () => mobileInput.bomb = true, () => mobileInput.bomb = false);
-}
+            addButtonEvents(btnUp, () => mobileInput.up = true, () => mobileInput.up = false);
+            addButtonEvents(btnDown, () => mobileInput.down = true, () => mobileInput.down = false);
+            addButtonEvents(btnLeft, () => mobileInput.left = true, () => mobileInput.left = false);
+            addButtonEvents(btnRight, () => mobileInput.right = true, () => mobileInput.right = false);
+            addButtonEvents(btnBomb, () => mobileInput.bomb = true, () => mobileInput.bomb = false);
+        }
 
-function createButton(id, parent) {
-  let btn = document.createElement('div');
-  btn.id = id;
-  btn.className = 'btn';
-  parent.appendChild(btn);
-  return btn;
-}
+        function createButton(id, parent) {
+            let btn = document.createElement('div');
+            btn.id = id;
+            btn.className = 'btn';
+            parent.appendChild(btn);
+            return btn;
+        }
 
-function addButtonEvents(element, onDown, onUp) {
-  element.addEventListener('pointerdown', (e) => { e.preventDefault(); onDown(); });
-  element.addEventListener('pointerup',   (e) => { e.preventDefault(); onUp(); });
-  element.addEventListener('pointerout',  (e) => { e.preventDefault(); onUp(); });
-  element.addEventListener('pointercancel',(e) => { e.preventDefault(); onUp(); });
-}
+        function addButtonEvents(element, onDown, onUp) {
+            element.addEventListener('pointerdown', (e) => { e.preventDefault(); onDown(); });
+            element.addEventListener('pointerup', (e) => { e.preventDefault(); onUp(); });
+            element.addEventListener('pointerout', (e) => { e.preventDefault(); onUp(); });
+            element.addEventListener('pointercancel', (e) => { e.preventDefault(); onUp(); });
+        }
 
-function update() {
-  let vx = 0;
-  let vy = 0;
+        function update() {
+            let vx = 0;
+            let vy = 0;
 
-  // Mobile input
-  if (mobileInput.left) vx = -PLAYER_SPEED;
-  else if (mobileInput.right) vx = PLAYER_SPEED;
-  
-  if (mobileInput.up) vy = -PLAYER_SPEED;
-  else if (mobileInput.down) vy = PLAYER_SPEED;
+            // Mobile input
+            if (mobileInput.left) vx = -PLAYER_SPEED;
+            else if (mobileInput.right) vx = PLAYER_SPEED;
 
-  // Keyboard input (if on desktop)
-  if (cursors.left.isDown) vx = -PLAYER_SPEED;
-  else if (cursors.right.isDown) vx = PLAYER_SPEED;
-  
-  if (cursors.up.isDown) vy = -PLAYER_SPEED;
-  else if (cursors.down.isDown) vy = PLAYER_SPEED;
-  
-  player.body.setVelocity(vx, vy);
+            if (mobileInput.up) vy = -PLAYER_SPEED;
+            else if (mobileInput.down) vy = PLAYER_SPEED;
 
-  // Bomb input: check either space or mobile bomb
-  if (Phaser.Input.Keyboard.JustDown(spaceKey) || mobileInput.bomb === true) {
-    placeBomb();
-    mobileInput.bomb = false; // reset bomb after placing
-  }
-}
+            // Keyboard input (if on desktop)
+            if (cursors.left.isDown) vx = -PLAYER_SPEED;
+            else if (cursors.right.isDown) vx = PLAYER_SPEED;
 
-function placeBomb() {
-  let px = Math.floor(player.x / TILE_SIZE);
-  let py = Math.floor(player.y / TILE_SIZE);
+            if (cursors.up.isDown) vy = -PLAYER_SPEED;
+            else if (cursors.down.isDown) vy = PLAYER_SPEED;
 
-  // Check if a bomb already exists here
-  for (let b of bombs) {
-    if (Math.floor(b.x/TILE_SIZE) === px && Math.floor(b.y/TILE_SIZE) === py) {
-      return; 
-    }
-  }
+            player.body.setVelocity(vx, vy);
 
-  let bombX = px*TILE_SIZE + TILE_SIZE/2;
-  let bombY = py*TILE_SIZE + TILE_SIZE/2;
+            // Bomb input: check either space or mobile bomb
+            if (Phaser.Input.Keyboard.JustDown(spaceKey) || mobileInput.bomb === true) {
+                placeBomb();
+                mobileInput.bomb = false; // reset bomb after placing
+            }
+        }
 
-  let bomb = sceneRef.add.rectangle(bombX, bombY, TILE_SIZE*0.8, TILE_SIZE*0.8, 0x0000ff);
-  sceneRef.physics.add.existing(bomb);
-  bomb.body.setImmovable(true);
-  bombs.push(bomb);
+        function placeBomb() {
+            let px = Math.floor(player.x / TILE_SIZE);
+            let py = Math.floor(player.y / TILE_SIZE);
 
-  // Player collides with bombs
-  sceneRef.physics.add.collider(player, bomb);
+            // Check if a bomb already exists here
+            for (let b of bombs) {
+                if (Math.floor(b.x / TILE_SIZE) === px && Math.floor(b.y / TILE_SIZE) === py) {
+                    return;
+                }
+            }
 
-  // Timer to explode
-  sceneRef.time.delayedCall(BOMB_DELAY, () => {
-    explodeBomb(bomb);
-  }, [], sceneRef);
-}
+            let bombX = px * TILE_SIZE + TILE_SIZE / 2;
+            let bombY = py * TILE_SIZE + TILE_SIZE / 2;
 
-function explodeBomb(bomb) {
-  bombs = bombs.filter(b => b !== bomb);
-  bomb.destroy();
+            let bomb = sceneRef.add.rectangle(bombX, bombY, TILE_SIZE * 0.8, TILE_SIZE * 0.8, 0x0000ff);
+            sceneRef.physics.add.existing(bomb);
+            bomb.body.setImmovable(true);
+            bombs.push(bomb);
 
-  let bx = Math.floor(bomb.x/TILE_SIZE);
-  let by = Math.floor(bomb.y/TILE_SIZE);
+            sceneRef.physics.add.collider(player, bomb);
 
-  // Explode center
-  explodeTile(bx, by);
-  
-  // Up
-  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
-    if (!explodeTile(bx, by - i)) break;
-  }
-  // Down
-  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
-    if (!explodeTile(bx, by + i)) break;
-  }
-  // Left
-  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
-    if (!explodeTile(bx - i, by)) break;
-  }
-  // Right
-  for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
-    if (!explodeTile(bx + i, by)) break;
-  }
-}
+            sceneRef.time.delayedCall(BOMB_DELAY, () => {
+                explodeBomb(bomb);
+            }, [], sceneRef);
+        }
 
-function explodeTile(tx, ty) {
-  if (tx < 0 || tx >= GRID_WIDTH || ty < 0 || ty >= GRID_HEIGHT) return false;
-  let tile = levelData[ty][tx];
-  
-  let flash = sceneRef.add.rectangle(tx*TILE_SIZE+TILE_SIZE/2, ty*TILE_SIZE+TILE_SIZE/2, TILE_SIZE, TILE_SIZE, 0xff0000);
-  sceneRef.time.delayedCall(200, () => flash.destroy(), [], sceneRef);
+        function explodeBomb(bomb) {
+            bombs = bombs.filter(b => b !== bomb);
+            bomb.destroy();
 
-  if (tile === 1 || tile === 2) {
-    // Indestructible - stop explosion
-    return false;
-  } else if (tile === 3) {
-    // Destructible block
-    destroyDestructible(tx, ty);
-    return false; 
-  }
-  
-  return true;
-}
+            let bx = Math.floor(bomb.x / TILE_SIZE);
+            let by = Math.floor(bomb.y / TILE_SIZE);
 
-function destroyDestructible(tx, ty) {
-  levelData[ty][tx] = 0; // back to empty
-  let children = sceneRef.destructibleGroup.getChildren();
-  for (let c of children) {
-    let cx = Math.floor(c.x/TILE_SIZE);
-    let cy = Math.floor(c.y/TILE_SIZE);
-    if (cx === tx && cy === ty) {
-      c.destroy();
-      break;
-    }
-  }
-}
-</script>
+            explodeTile(bx, by);
+
+            for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+                if (!explodeTile(bx, by - i)) break;
+            }
+            for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+                if (!explodeTile(bx, by + i)) break;
+            }
+            for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+                if (!explodeTile(bx - i, by)) break;
+            }
+            for (let i = 1; i <= EXPLOSION_RADIUS; i++) {
+                if (!explodeTile(bx + i, by)) break;
+            }
+        }
+
+        function explodeTile(tx, ty) {
+            if (tx < 0 || tx >= GRID_WIDTH || ty < 0 || ty >= GRID_HEIGHT) return false;
+            let tile = levelData[ty][tx];
+
+            let flash = sceneRef.add.rectangle(tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0xff0000);
+            sceneRef.time.delayedCall(200, () => flash.destroy(), [], sceneRef);
+
+            if (tile === 1 || tile === 2) {
+                return false;
+            } else if (tile === 3) {
+                destroyDestructible(tx, ty);
+                return false;
+            }
+
+            return true;
+        }
+
+        function destroyDestructible(tx, ty) {
+            levelData[ty][tx] = 0;
+            let children = sceneRef.destructibleGroup.getChildren();
+            for (let c of children) {
+                let cx = Math.floor(c.x / TILE_SIZE);
+                let cy = Math.floor(c.y / TILE_SIZE);
+                if (cx === tx && cy === ty) {
+                    c.destroy();
+                    break;
+                }
+            }
+        }
+    </script>
 </body>
+
 </html>

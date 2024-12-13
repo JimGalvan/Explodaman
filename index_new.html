@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0,
+                   user-scalable=no,
+                   minimum-scale=1.0,
+                   maximum-scale=1.0" />
+    <title>Bomberman Multiplayer - Landscape Only</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: sans-serif;
+            color: #fff;
+            /* Disable text selection and browser callouts */
+            user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-text-size-adjust: none;
+            /* Prevents Safari from adjusting text size */
+            overscroll-behavior: none;
+            touch-action: none;
+        }
+
+        #game-container {
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            position: relative;
+            /* This ensures no scrolling or selecting inside container */
+            user-select: none;
+            touch-action: none;
+        }
+
+        /* Overlay for portrait mode */
+        #rotate-message {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            text-align: center;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+        }
+
+        #rotate-message p {
+            font-size: 2em;
+        }
+
+        @media (orientation: portrait) {
+            #rotate-message {
+                display: flex;
+            }
+
+            #game-container canvas {
+                display: none;
+            }
+        }
+
+        /* Mobile Controls */
+        .btn {
+            position: absolute;
+            background: #555;
+            width: 60px;
+            height: 60px;
+            border-radius: 10px;
+            opacity: 0.65;
+            touch-action: none;
+            /* For better mobile handling */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5em;
+            color: #fff;
+        }
+
+        /* Adjust the D-Pad layout for more spacing:
+         Let's space them vertically more:
+           Up (higher up)
+        Left     Right
+           Down (lower down)
+      */
+        #btn-up {
+            left: 10%;
+            bottom: 40%;
+            /* Higher up than before */
+        }
+
+        #btn-left {
+            left: 3%;
+            /* Slightly closer to the left edge */
+            bottom: 25%;
+        }
+
+        #btn-right {
+            left: 17%;
+            /* Moved further to the right for a larger gap */
+            bottom: 25%;
+        }
+
+        #btn-down {
+            left: 10%;
+            bottom: 10%;
+            /* Lower than before for more vertical separation */
+        }
+
+        /* Bomb button (right side) */
+        #btn-bomb {
+            right: 5%;
+            bottom: 15%;
+            background: #00f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2em;
+        }
+
+        /* Game Lobby Modal */
+        #game-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #game-modal.active {
+            display: flex;
+        }
+
+        #game-modal input {
+            padding: 10px;
+            margin: 10px 0;
+            width: 200px;
+            border: none;
+            border-radius: 5px;
+        }
+
+        #game-modal button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            background: #28a745;
+            color: #fff;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        #game-modal button.join-btn {
+            background: #007bff;
+        }
+
+        #scoreboard {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #scoreboard.active {
+            display: flex;
+        }
+
+        #scoreboard h2 {
+            margin: 0 0 10px 0;
+        }
+
+        #scoreboard ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #scoreboard li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="game-container">
+        <div id="rotate-message">
+            <p>Please rotate your device to landscape mode.</p>
+        </div>
+
+        <!-- Game Lobby Modal -->
+        <div id="game-modal">
+            <h2>Bomberman Multiplayer</h2>
+            <input type="text" id="player-name" placeholder="Enter your name" />
+            <div>
+                <button id="create-game-btn">Create Game</button>
+                <button id="join-game-btn" class="join-btn">Join Game</button>
+            </div>
+            <input type="text" id="game-id-input" placeholder="Enter Game ID to Join" style="display:none;" />
+            <button id="confirm-join-btn" style="display:none;">Confirm Join</button>
+        </div>
+
+        <!-- Scoreboard -->
+        <div id="scoreboard">
+            <h2>Game Over</h2>
+            <ul id="score-list">
+                <!-- Scores will be dynamically populated -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- Phaser and SignalR Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.0/signalr.min.js"></script>
+
+    <script>
+        // Prevent Double-Tap Zoom
+        let lastTouch = 0;
+        document.addEventListener('touchstart', (e) => {
+            const now = Date.now();
+            if (now - lastTouch <= 300) {
+                e.preventDefault();
+            }
+            lastTouch = now;
+        }, { passive: false });
+
+        // --- GAME CONFIG ---
+        const TILE_SIZE = 32;
+        const GRID_WIDTH = 15;
+        const GRID_HEIGHT = 11;
+        const PLAYER_SPEED = 150;
+        const BOMB_DELAY = 2000; // ms until bomb explodes
+        const EXPLOSION_RADIUS = 2; // tiles in each direction
+
+        // Map Legend:
+        // 0 = empty floor
+        // 1 = indestructible wall (gray)
+        // 2 = indestructible block (brown)
+        // 3 = destructible block (green)
+
+        let levelData = [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ];
+
+        let players = {}; // Store all players
+        let bombs = [];
+        let explosions = [];
+        let sceneRef;
+        let connection;
+        let currentGameId = null;
+        let playerId = null; // Unique identifier for the player
+
+        const config = {
+            type: Phaser.AUTO,
+            width: GRID_WIDTH * TILE_SIZE,
+            height: GRID_HEIGHT * TILE_SIZE,
+            parent: 'game-container',
+            backgroundColor: '#000000',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    debug: false
+                }
+            },
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        const game = new Phaser.Game(config);
+
+        function preload() {
+            // No external assets needed
+        }
+
+        function create() {
+            sceneRef = this;
+
+            this.wallsGroup = this.physics.add.staticGroup();
+            this.indestructibleGroup = this.physics.add.staticGroup();
+            this.destructibleGroup = this.physics.add.staticGroup();
+
+            // Build initial level
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    let tile = levelData[y][x];
+                    if (tile === 1) {
+                        let wall = this.add.rectangle(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0x444444);
+                        this.physics.add.existing(wall, true);
+                        this.wallsGroup.add(wall);
+                    } else if (tile === 2) {
+                        let block = this.add.rectangle(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0x886600);
+                        this.physics.add.existing(block, true);
+                        this.indestructibleGroup.add(block);
+                    }
+                }
+            }
+
+            // Collisions
+            this.physics.add.collider(this.wallsGroup, this.indestructibleGroup);
+            this.physics.add.collider(this.wallsGroup, this.destructibleGroup);
+            this.physics.add.collider(this.indestructibleGroup, this.destructibleGroup);
+            this.physics.add.collider(this.destructibleGroup, this.destructibleGroup);
+
+            // Initialize UI Elements
+            setupUI();
+
+            // Set world bounds
+            this.physics.world.setBounds(0, 0, GRID_WIDTH * TILE_SIZE, GRID_HEIGHT * TILE_SIZE);
+        }
+
+        function setupUI() {
+            const gameModal = document.getElementById('game-modal');
+            const createGameBtn = document.getElementById('create-game-btn');
+            const joinGameBtn = document.getElementById('join-game-btn');
+            const confirmJoinBtn = document.getElementById('confirm-join-btn');
+            const gameIdInput = document.getElementById('game-id-input');
+            const playerNameInput = document.getElementById('player-name');
+
+            // Show the game modal on start
+            gameModal.classList.add('active');
+
+            // Handle Create Game
+            createGameBtn.addEventListener('click', () => {
+                const playerName = playerNameInput.value.trim();
+                if (playerName === "") {
+                    alert("Please enter your name.");
+                    return;
+                }
+                connection.invoke("CreateGame", playerName)
+                    .catch(err => console.error(err.toString()));
+            });
+
+            // Handle Join Game
+            joinGameBtn.addEventListener('click', () => {
+                gameIdInput.style.display = 'block';
+                confirmJoinBtn.style.display = 'block';
+            });
+
+            confirmJoinBtn.addEventListener('click', () => {
+                const gameId = gameIdInput.value.trim().toUpperCase();
+                const playerName = playerNameInput.value.trim();
+                if (gameId === "" || playerName === "") {
+                    alert("Please enter both Game ID and your name.");
+                    return;
+                }
+                connection.invoke("JoinGame", gameId, playerName)
+                    .catch(err => console.error(err.toString()));
+            });
+
+            // Handle Game Over
+            connection.on("GameOver", (scores) => {
+                displayScoreboard(scores);
+            });
+        }
+
+        function displayScoreboard(scores) {
+            const scoreboard = document.getElementById('scoreboard');
+            const scoreList = document.getElementById('score-list');
+            scoreList.innerHTML = ''; // Clear previous scores
+
+            scores.forEach(score => {
+                const li = document.createElement('li');
+                li.textContent = `${score.name}: ${score.points}`;
+                scoreList.appendChild(li);
+            });
+
+            scoreboard.classList.add('active');
+        }
+
+        function createOnScreenControls() {
+            const container = document.getElementById('game-container');
+
+            let btnUp = createButton('btn-up', container, '▲');
+            let btnDown = createButton('btn-down', container, '▼');
+            let btnLeft = createButton('btn-left', container, '◀');
+            let btnRight = createButton('btn-right', container, '▶');
+            let btnBomb = createButton('btn-bomb', container, '💣');
+
+            addButtonEvents(btnUp, () => sendInput('Up', false), () => sendInput(null, false));
+            addButtonEvents(btnDown, () => sendInput('Down', false), () => sendInput(null, false));
+            addButtonEvents(btnLeft, () => sendInput('Left', false), () => sendInput(null, false));
+            addButtonEvents(btnRight, () => sendInput('Right', false), () => sendInput(null, false));
+            addButtonEvents(btnBomb, () => sendInput(null, true), () => sendInput(null, false));
+        }
+
+        function createButton(id, parent, label) {
+            let btn = document.createElement('div');
+            btn.id = id;
+            btn.className = 'btn';
+            btn.textContent = label;
+            parent.appendChild(btn);
+            return btn;
+        }
+
+        function addButtonEvents(element, onDown, onUp) {
+            element.addEventListener('pointerdown', (e) => { e.preventDefault(); onDown(); });
+            element.addEventListener('pointerup', (e) => { e.preventDefault(); onUp(); });
+            element.addEventListener('pointerout', (e) => { e.preventDefault(); onUp(); });
+            element.addEventListener('pointercancel', (e) => { e.preventDefault(); onUp(); });
+        }
+
+        function sendInput(direction, placeBomb) {
+            if (!currentGameId) return;
+            connection.invoke("SendInput", currentGameId, {
+                direction: direction,
+                placeBomb: placeBomb
+            }).catch(err => console.error(err.toString()));
+        }
+
+        function update() {
+            // Local player movement can be handled via server updates
+            // implement client-side prediction here
+            // rely on server updates
+        }
+
+        // Initialize SignalR connection
+        function initializeSignalR() {
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl("http://localhost:5253/gamehub", {
+                    skipNegotiation: true, // Ensure WebSockets are prioritized
+                    transport: signalR.HttpTransportType.WebSockets
+                }) 
+                .configureLogging(signalR.LogLevel.Information)
+                .build();
+
+            connection.start()
+                .then(() => {
+                    console.log("Connected to SignalR hub.");
+                })
+                .catch(err => console.error("Error connecting to SignalR hub:", err.toString()));
+
+            // Handle server messages
+            connection.on("GameCreated", (gameId) => {
+                currentGameId = gameId;
+                alert(`Game created! Share this Game ID with friends: ${gameId}`);
+                document.getElementById('game-modal').classList.remove('active');
+                createOnScreenControls();
+            });
+
+            connection.on("JoinFailed", (reason) => {
+                alert(`Join failed: ${reason}`);
+            });
+
+            connection.on("PlayerJoined", (playerName, playerCount) => {
+                console.log(`${playerName} joined. Players: ${playerCount}`);
+                // Optionally update a lobby UI
+            });
+
+            connection.on("StartGame", () => {
+                console.log("Game is starting!");
+                // Initialize players and start the game
+                document.getElementById('game-modal').classList.remove('active');
+                createOnScreenControls();
+            });
+
+            connection.on("UpdateGameState", (gameState) => {
+                // Update the local game state based on server's authoritative state
+                updateGameState(gameState);
+            });
+
+            connection.on("GameOver", (scores) => {
+                // Display the scoreboard
+                displayScoreboard(scores);
+            });
+        }
+
+        // Update the Phaser game state based on server data
+        function updateGameState(gameState) {
+            // Assuming gameState is an object with players, bombs, and map information
+            // Example gameState structure:
+            // {
+            //     players: [
+            //         { id: "player1", name: "Alice", x: 32, y: 32 },
+            //         { id: "player2", name: "Bob", x: 64, y: 32 }
+            //     ],
+            //     bombs: [
+            //         { x: 96, y: 32, timer: 1.5 }
+            //     ],
+            //     map: [
+            //         [1,1,1,...],
+            //         ...
+            //     ]
+            // }
+
+            // Update players
+            gameState.players.forEach(p => {
+                if (p.id === playerId) {
+                    // Update local player if needed
+                } else {
+                    // Update or create other players
+                    if (!players[p.id]) {
+                        // Create a new player sprite
+                        players[p.id] = sceneRef.add.rectangle(p.x + TILE_SIZE / 2, p.y + TILE_SIZE / 2, TILE_SIZE / 1.5, TILE_SIZE / 1.5, 0xff0000);
+                        sceneRef.physics.add.existing(players[p.id]);
+                        players[p.id].body.setCollideWorldBounds(true);
+                        // Optionally add to a group
+                    }
+                    // Move the player sprite
+                    players[p.id].x = p.x + TILE_SIZE / 2;
+                    players[p.id].y = p.y + TILE_SIZE / 2;
+                }
+            });
+
+            // Remove players who have left
+            for (let id in players) {
+                if (!gameState.players.find(p => p.id === id)) {
+                    players[id].destroy();
+                    delete players[id];
+                }
+            }
+
+            // Update bombs
+            // First, remove existing bombs
+            bombs.forEach(bomb => bomb.destroy());
+            bombs = [];
+
+            gameState.bombs.forEach(b => {
+                let bomb = sceneRef.add.rectangle(b.x + TILE_SIZE / 2, b.y + TILE_SIZE / 2, TILE_SIZE * 0.8, TILE_SIZE * 0.8, 0x0000ff);
+                sceneRef.physics.add.existing(bomb);
+                bomb.body.setImmovable(true);
+                bombs.push(bomb);
+
+                // Optionally add a timer graphic or countdown
+            });
+
+            // Update the map (destructible blocks)
+            // Remove existing destructible blocks
+            sceneRef.destructibleGroup.getChildren().forEach(block => block.destroy());
+            sceneRef.destructibleGroup.clear(true, true);
+
+            gameState.map.forEach((row, y) => {
+                row.forEach((tile, x) => {
+                    if (tile === 3) { // Destructible block
+                        let destr = sceneRef.add.rectangle(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, TILE_SIZE, TILE_SIZE, 0x005500);
+                        sceneRef.physics.add.existing(destr, true);
+                        sceneRef.destructibleGroup.add(destr);
+                    }
+                });
+            });
+        }
+
+        // Start the SignalR connection
+        initializeSignalR();
+    </script>
+</body>
+
+</html>
